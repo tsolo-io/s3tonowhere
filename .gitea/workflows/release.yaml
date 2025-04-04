@@ -1,0 +1,29 @@
+---
+name: Release
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  release:
+    runs-on: "ubuntu-22.04"
+    container:
+      image: gitea.tu.tsolo.net/tsolo/ubuntu:24-dev
+    steps:
+      - name: Check out repository code
+        uses: https://gitea.com/actions/checkout@v4
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "^1.22"
+      - name: Run tests
+        run: |
+          go version
+          make build
+      - name: Release Action
+        id: use-go-action
+        uses: https://gitea.com/actions/release-action@main
+        with:
+          files: |-
+            dist/**
+          api_key: "${{secrets.RELEASE_TOKEN}}"
