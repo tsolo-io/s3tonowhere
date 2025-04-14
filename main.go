@@ -80,7 +80,7 @@ func downloadS3Object(client *minio.Client, ctx context.Context, bucketName stri
 	channel <- ChannelSample{size: size, objectName: key, statusCode: statusCode, duration: time.Since(start)}
 }
 
-// Listen the a channel and collect all the performance stats from the goroutines doing the downloads.
+// Listen on the Sample channel and collect all the performance stats from the goroutines doing the downloads.
 func collectResult(channel chan ChannelSample, task_counter *int, result *Result) {
 	count := 0
 	var total_size uint64 = 0
@@ -88,10 +88,10 @@ func collectResult(channel chan ChannelSample, task_counter *int, result *Result
 	rate := 0.0
 	startTime := time.Now()
 	lastPrint := time.Now()
-	for s := range channel {
-		result.samples = append(result.samples, s)
+	for sample := range channel {
+		result.samples = append(result.samples, sample)
 		count++
-		total_size += s.size
+		total_size += sample.size
 		total_duration = time.Since(startTime).Seconds()
 		rate = float64(total_size) / total_duration
 		if time.Since(lastPrint) > 2*time.Second {
@@ -123,11 +123,11 @@ func summariseDownloads(result *Result) (StatsSummary, StatsSummary, map[int]int
 	var samples_rate []float64
 	var samples_size []float64
 	status_map := make(map[int]int)
-	for _, s := range result.samples {
-		samples_size = append(samples_size, float64(s.size))
-		sample_rate := float64(s.size) / s.duration.Seconds()
+	for _, sample := range result.samples {
+		samples_size = append(samples_size, float64(sample.size))
+		sample_rate := float64(sample.size) / sample.duration.Seconds()
 		samples_rate = append(samples_rate, sample_rate)
-		status_map[s.statusCode]++
+		status_map[sample.statusCode]++
 	}
 
 	sort.Float64s(samples_size)
