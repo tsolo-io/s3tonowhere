@@ -1,79 +1,130 @@
 package main
 
 import (
-	"flag"
 	"fmt"
-	"log"
 	"net/url"
-	"os"
+	"reflect"
 
+	"github.com/charmbracelet/log"
+	"github.com/urfave/cli/v3"
 	"gopkg.in/ini.v1"
 )
 
 type Config struct {
-	Host       string
-	AccessKey  string
-	SecretKey  string
-	UseSSL     bool
-	Region     string
-	BucketName string
-	MaxObjects int
-	MaxSeconds int
+	S3Host        string
+	S3Endpoint    string
+	S3AccessKey   string
+	S3SecretKey   string
+	S3BucketName  string
+	S3Region      string
+	UseSSL        bool
+	LimitDuration int
+	LimitObjects  int
+	Quiet         bool
+	Debug         bool
 }
 
-func getConfig() Config {
+var ARG_DEBUG string = "debug"
+var ARG_QUIET string = "quiet"
+var ARG_ACCESS_KEY string = "access-key"
+var ARG_SECRET_KEY string = "secret-key"
+var ARG_BUCKET_NAME string = "bucket"
+var ARG_REGION string = "region"
+var ARG_ENDPOINT string = "endpoint"
+var ARG_LIMIT_DURATION string = "limit-duration"
+var ARG_LIMIT_OBJECTS string = "limit-objects"
 
-	var maxObjects = flag.Int("objects", -1,
-		"Limits the number of objects downloaded, a negative value means no limits. First limit reached causes application to exit.")
-	// and 0 is weird behaviour.
-	var maxSeconds = flag.Int("seconds", -1,
-		"Limits how long the application runs for, a negative value means no limits. After this many seconds the application will start no new downloads but downloads in progress will continue until completed. First limit reached causes application to exit.")
-	var bucketName = flag.String("bucket", "", "Name of the bucket to download from.")
-	var sectionName = flag.String("section", "", "Name of the section from config file to use.")
-	var configFileName = flag.String("config", "rclone.conf", "The name of the configuration file.")
-
-	flag.Parse()
-	// if len(os.Args) != 3 {
-	// 	log.Fatalf("Usage: %s <bucket name> <section in config>", os.Args[0])
-	// }
-	// bucketName := os.Args[1]
-	// sectionName := os.Args[2]
-	if *bucketName == "" {
-		log.Fatal("Bucket name is required")
-	}
-	if *sectionName == "" {
-		log.Fatal("Section name is required")
-	}
-
-	if *maxSeconds == 0 || *maxSeconds == 0 {
-		log.Fatal("Now your messing with me. Zero doesn't make sense.")
-	}
-
-	log.Println("Loading configuration from rclone.conf")
-	cfg, err := ini.Load(*configFileName)
+// Parse the given INI configuration file.
+// It is expected that the file is in rclone format and contains a section with the given name.
+func readINIConfig(config_file string, section_name string) (Config, error) {
+	log.Info(fmt.Sprintf("Loading %s configuration section from %s", section_name, config_file))
+	cfg, err := ini.Load(config_file)
 	if err != nil {
-		fmt.Printf("Failed to read file: %v", err)
-		os.Exit(1)
+		log.Fatal("Failed to read file. ", err)
 	}
-	section := cfg.Section(*sectionName)
-	region := section.Key("region").String()
-	accessKey := section.Key("access_key_id").String()
-	secretKey := section.Key("secret_access_key").String()
-	endpoint := section.Key("endpoint").String()
-	endpointURL, err := url.Parse(endpoint)
+	config := Config{}
+	section, err := cfg.GetSection(section_name)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatal(err)
+	}
+	config.S3Region = section.Key("region").String()
+	config.S3AccessKey = section.Key("access_key_id").String()
+	config.S3SecretKey = section.Key("secret_access_key").String()
+	config.S3Endpoint = section.Key("endpoint").String()
+
+	endpointURL, err := url.Parse(config.S3Endpoint)
+	if err != nil {
+		log.Fatal(err)
+	}
+	config.UseSSL = endpointURL.Scheme == "https"
+	config.S3Host = endpointURL.Host
+	return config, err
+}
+
+// A utility function to set a string field in the Config struct.
+func setConfigString(config *Config, cmd *cli.Command, field string, name string) {
+	value := cmd.String(name)
+	if value != "" {
+		r := reflect.ValueOf(config)
+		f := reflect.Indirect(r).FieldByName(field)
+		if f.Kind() != reflect.Invalid {
+			f.SetString(value)
+		}
+	}
+}
+
+// A utility function to set an integer field in the Config struct.
+func setConfigInt(config *Config, cmd *cli.Command, field string, name string) {
+	value := cmd.Int(name)
+	if value < 1 {
+		value = -1
+	}
+	r := reflect.ValueOf(config)
+	f := reflect.Indirect(r).FieldByName(field)
+	if f.Kind() != reflect.Invalid {
+		f.SetInt(value)
+	}
+}
+
+// Returns the Config struct used by the rest of the program
+// Command line args are applied, e.g. to load config file.
+func getConfig(cmd *cli.Command) *Config {
+	var err error
+	var config Config
+	if cmd.Bool(ARG_DEBUG) {
+		log.SetLevel(log.DebugLevel)
+	} else if cmd.Bool(ARG_QUIET) {
+		log.SetLevel(log.WarnLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
 	}
 
-	return Config{
-		Host:       endpointURL.Host,
-		AccessKey:  accessKey,
-		SecretKey:  secretKey,
-		UseSSL:     endpointURL.Scheme == "https",
-		Region:     region,
-		BucketName: *bucketName,
-		MaxObjects: *maxObjects,
-		MaxSeconds: *maxSeconds,
+	config_file := cmd.String("rclone-config")
+	section := cmd.String("section")
+
+	if config_file != "" && section != "" {
+		config, err = readINIConfig(config_file, section)
+	} else {
+		config = Config{}
+		err = nil
 	}
+	setConfigString(&config, cmd, "S3Region", ARG_REGION)
+	setConfigString(&config, cmd, "S3AccessKey", ARG_ACCESS_KEY)
+	setConfigString(&config, cmd, "S3SecretKey", ARG_SECRET_KEY)
+	setConfigString(&config, cmd, "S3Endpoint", ARG_ENDPOINT)
+	setConfigString(&config, cmd, "S3BucketName", ARG_BUCKET_NAME)
+	setConfigInt(&config, cmd, "LimitDuration", ARG_LIMIT_DURATION)
+	setConfigInt(&config, cmd, "LimitObjects", ARG_LIMIT_OBJECTS)
+
+	if cmd.Bool(ARG_DEBUG) {
+		config.Debug = true
+		config.Quiet = false
+	} else if cmd.Bool(ARG_QUIET) {
+		config.Quiet = true
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	return &config
 }
