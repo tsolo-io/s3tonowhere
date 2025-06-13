@@ -36,7 +36,7 @@ This will create the `s3tonowhere` binary in the `dist/` directory.
 
 ---
 
-## First Run
+## Getting help 
 
 ```bash
 dist/s3tonowhere -h
