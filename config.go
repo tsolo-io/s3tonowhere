@@ -47,6 +47,12 @@ func readINIConfig(config_file string, section_name string) (Config, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	sectionType := section.Key("type").String()
+	if sectionType != "s3" {
+		log.Fatalf("The selected section type is '%s', not 's3'. Exiting.", sectionType)
+	}
+
 	config.S3Region = section.Key("region").String()
 	config.S3AccessKey = section.Key("access_key_id").String()
 	config.S3SecretKey = section.Key("secret_access_key").String()
