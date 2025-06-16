@@ -103,7 +103,7 @@ This structured output makes it easy to log, parse, or integrate with other benc
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0).
 
 ---
 
